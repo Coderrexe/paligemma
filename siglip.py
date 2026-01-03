@@ -1,6 +1,7 @@
-from typing import Tuple
+from typing import Optional, Tuple
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class SiglipVisionConfig:
@@ -74,6 +75,68 @@ class SiglipVisionEmbeddings(nn.Module):
     return embeddings
 
 
+class SiglipAttention(nn.Module):
+  """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+  def __init__(self, config):
+    super().__init__()
+    self.config = config
+    self.embed_dim = config.hidden_size
+    self.num_heads = config.num_attention_heads
+    self.head_dim = self.embed_dim // self.num_heads
+    self.scale = self.head_dim ** -0.5  # Equivalent to 1 / sqrt(self.head_dim)
+    self.dropout = config.attention_dropout
+
+    self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
+    self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
+    self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
+    self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+
+  def forward(
+    self,
+    hidden_states: torch.Tensor
+  ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    # hidden_states: [batch_size, num_patches, embed_dim]
+    batch_size, seq_len, _ = hidden_states.shape
+    # query_states: [batch_size, num_patches, embed_dim]
+    query_states = self.q_proj(hidden_states)
+    # key_states: [batch_size, num_patches, embed_dim]
+    key_states = self.k_proj(hidden_states)
+    # value_states: [batch_size, num_patches, embed_dim]
+    value_states = self.v_proj(hidden_states)
+
+    # query_states: [batch_size, num_heads, num_patches, head_dim]
+    # split tokens into smaller tokens based on how many heads we have
+    query_states = query_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+    key_states = key_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+    value_states = value_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+    # Calculate the attention using the formula Q * K^T / sqrt(d_head). attn_weights: [batch_size, num_heads, num_patches, num_patches]
+    attn_weights = (torch.matmul(query_states, key_states.transpose(2, 3)) * self.scale)
+
+    if attn_weights.shape != (batch_size, self.num_heads, seq_len, seq_len):
+      raise ValueError(
+        f"Attention weights should be of size {(batch_size, self.num_heads, seq_len, seq_len)}, but is"
+        f" {attn_weights.shape}"
+      )
+    
+    # Apply softmax row-wise. attn_weights: [batch_size, num_heads, num_patches, num_patches]
+    attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    # Apply dropout only during training
+    attn_weights = F.dropout(attn_weights, p=self.dropout, training=self.training)
+    # Multiply the attention weights by the value states. attn_weights: [batch_size, num_heads, num_patches, num_patches]
+    attn_output = torch.matmul(attn_weights, value_states)
+    
+    # [batch_size, num_heads, num_patches, head_dim] -> [batch_size, num_patches, num_heads, head_dim]
+    attn_output = attn_output.transpose(1, 2).contiguous()
+    # [batch_size, num_patches, num_heads, head_dim] -> [batch_size, num_patches, embed_dim]
+    attn_output = attn_output.reshape(batch_size, seq_len, self.embed_dim)
+    # "mix" the heads with embed_dim x embed_dim matrix (out_proj): [batch_size, num_patches, embed_dim]
+    attn_output = self.out_proj(attn_output)
+
+    return attn_output, attn_weights
+
+
 class SiglipMLP(nn.Module):
   def __init__(self, config):
     super().__init__()
@@ -85,7 +148,7 @@ class SiglipMLP(nn.Module):
     # [batch_size, num_patches, embed_dim] -> [batch_size, num_patches, intermediate_size]
     hidden_states = self.fc1(hidden_states)
     # hidden_states: [batch_size, num_patches, intermediate_size]
-    hidden_states = nn.functional.gelu(hidden_states, approximate="tanh")
+    hidden_states = F.gelu(hidden_states, approximate="tanh")
     # [batch_size, num_patches, intermediate_size] -> [batch_size, num_patches, embed_dim]
     hidden_states = self.fc2(hidden_states)
     return hidden_states

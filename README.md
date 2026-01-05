@@ -7,5 +7,7 @@ This is a PyTorch implementation of the PeliGemma Vision-Language Model (VLM) by
 
 `processing_paligemma.py` implements the preprocessing/tokenization pipeline for PaliGemma, before the inputs are passed into the SigLIP and Gemma models.
 
+`gemma.py` implements the Gemma language model decoder.
+
 ### Architecture
 <img src="images/paligemma_architecture.png" alt="PaliGemma Architecture" width="700">

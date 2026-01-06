@@ -23,7 +23,20 @@ class GemmaConfig:
     pad_token_id=None,
     **kwargs
   ):
-    pass
+    super().__init__()
+    self.vocab_size = vocab_size
+    self.hidden_size = hidden_size
+    self.intermediate_size = intermediate_size
+    self.num_hidden_layers = num_hidden_layers
+    self.num_attention_heads = num_attention_heads
+    self.num_key_value_heads = num_key_value_heads
+    self.head_dim = head_dim
+    self.max_position_embedding = max_position_embedding
+    self.rms_norm_eps = rms_norm_eps
+    self.rope_theta = rope_theta
+    self.attention_bias = attention_bias
+    self.attention_dropout = attention_dropout
+    self.pad_token_id = pad_token_id
 
 
 class PaliGemmaConfig:

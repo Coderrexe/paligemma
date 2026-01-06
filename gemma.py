@@ -5,6 +5,60 @@ import torch.nn as nn
 from siglip import SiglipVisionConfig, SiglipVisionModel
 
 
+class GemmaConfig:
+  def __init__(
+    self,
+    vocab_size,
+    hidden_size, # embedding size of each vector
+    intermediate_size,
+    num_hidden_layers,
+    num_attention_heads, # num heads for query (grouped query attention)
+    num_key_value_heads, # num heads for key/value
+    head_dim=256,
+    max_position_embedding=8192,
+    rms_norm_eps=1e-6,
+    rope_theta=10000.0,
+    attention_bias=False,
+    attention_dropout=0.0,
+    pad_token_id=None,
+    **kwargs
+  ):
+    pass
+
+
+class PaliGemmaConfig:
+  def __init__(
+    self,
+    vision_config=None,
+    text_config=None,
+    ignore_index=-100,
+    image_token_index=256000,  # <image> placeholder token index
+    vocab_size=257152,
+    projection_dim=2048,  # final dimension image features should be resized to (projection layer)
+    hidden_size=2048,  # embedding size of language model
+    pad_token_id=None,
+    **kwargs,
+  ):
+    super().__init__()
+    self.ignore_index = ignore_index
+    self.image_token_index = image_token_index
+    self.vocab_size = vocab_size
+    self.projection_dim = projection_dim
+    self.hidden_size = hidden_size
+    self.vision_config = vision_config
+    self.is_encoder_decoder = False
+    self.pad_token_id = pad_token_id
+
+    self.vision_config = SiglipVisionConfig(**vision_config)
+    self.text_config = text_config
+
+    self.text_config = GemmaConfig(**text_config, pad_token_id=pad_token_id)
+    self.vocab_size = self.text_config.vocab_size
+
+    self.text_config.num_image_tokens = (self.vision_config.image_size // self.vision_config.patch_size) ** 2
+    self.vision_config.projection_dim = projection_dim
+
+
 class PaliGemmaForConditionalGeneration(nn.Module):
   def __init__(self, config: PaliGemmaConfig):
     super().__init__()
